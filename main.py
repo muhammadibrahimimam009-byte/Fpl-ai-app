@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import os
+from google import genai
 
 st.set_page_config(page_title="FPL AI Intelligence", page_icon="⚽")
 
@@ -16,11 +17,11 @@ if st.button("Generate AI Breakdown", type="primary"):
         with st.spinner("Fetching squad data and running AI analysis..."):
             # 1. Fetch FPL Data
             try:
-                bootstrap = requests.get("https://fantasy.premierleague.com/api/bootstrap-static/").json()
+                bootstrap = requests.get("https://fantasy.premierleague.com/api/bootstrap-static/", timeout=20).json()
                 players = {p['id']: p['web_name'] for p in bootstrap['elements']}
                 current_gw = next((e['id'] for e in bootstrap['events'] if e['is_current']), 1)
                 
-                picks_res = requests.get(f"https://fantasy.premierleague.com/api/entry/{team_id}/event/{current_gw}/picks/").json()
+                picks_res = requests.get(f"https://fantasy.premierleague.com/api/entry/{team_id}/event/{current_gw}/picks/", timeout=20).json()
                 if picks_res.get("detail") == "Not found.":
                     st.error("Invalid Team ID. Please check and try again.")
                     st.stop()
@@ -34,56 +35,31 @@ if st.button("Generate AI Breakdown", type="primary"):
                 st.error(f"FPL API Error: {fpl_err}")
                 st.stop()
 
-            # 2. Run Gemini AI Analysis (Auto-Detect Active Model)
+            # 2. Run Gemini AI Analysis via GenAI SDK
             api_key = os.environ.get("GEMINI_API_KEY")
             if not api_key:
                 st.error("Missing GEMINI_API_KEY in Streamlit Secrets!")
                 st.stop()
 
-            prompt = f"Act as an elite FPL analyst. Here is my Gameweek {current_gw} starting XI: {', '.join(starting_xi)}. Give me 2 quick differential targets (<10% owned) and a 1-sentence team assessment."
+            prompt = (
+                f"Act as an elite FPL analyst. Here is my Gameweek {current_gw} starting XI: {', '.join(starting_xi)}. "
+                f"Give me 2 quick differential targets (<10% owned) and a 1-sentence team assessment."
+            )
 
             try:
-                # First, fetch the exact list of models allowed on this key
-                models_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-                models_res = requests.get(models_url).json()
-
-                if "models" not in models_res:
-                    st.error(f"API Key Error: {models_res.get('error', {}).get('message', 'Invalid API key')}")
-                    st.stop()
-
-                # Filter for active generation models (preferring Flash)
-                active_models = [
-                    m['name'].replace('models/', '') 
-                    for m in models_res['models'] 
-                    if 'generateContent' in m.get('supportedGenerationMethods', [])
-                ]
-
-                # Select best model (defaults to gemini-3.5-flash or first available)
-                selected_model = None
-                for target in ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-1.5-flash']:
-                    if target in active_models:
-                        selected_model = target
-                        break
+                client = genai.Client(api_key=api_key)
                 
-                if not selected_model and active_models:
-                    selected_model = active_models[0]
-
-                # Send generation request
-                gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={api_key}"
-                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                # Model selection using official Python SDK
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt
+                )
                 
-                res = requests.post(gen_url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
-                
-                if res.status_code == 200:
-                    ai_text = res.json()['candidates'][0]['content']['parts'][0]['text']
+                if response and response.text:
                     st.markdown("---")
-                    st.markdown(ai_text)
+                    st.markdown(response.text)
                 else:
-                    st.error(f"Generation Error ({selected_model}): {res.json().get('error', {}).get('message', res.text)}")
+                    st.error("AI generated an empty response. Please try again.")
 
-            except Exception as e:
-                st.error(f"Execution Error: {e}")
-
-
-
-
+            except Exception as ai_err:
+                st.error(f"AI Service Error: {ai_err}")
