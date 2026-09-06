@@ -31,7 +31,7 @@ if st.button("Generate AI Breakdown", type="primary"):
                 st.error(f"FPL API Error: {fpl_err}")
                 st.stop()
 
-            # 2. Run Gemini AI Analysis
+                        # 2. Run Gemini AI Analysis with Fallback
             try:
                 api_key = os.environ.get("GEMINI_API_KEY")
                 if not api_key:
@@ -41,13 +41,34 @@ if st.button("Generate AI Breakdown", type="primary"):
                 client = genai.Client(api_key=api_key)
                 prompt = f"Act as an elite FPL analyst. Here is my Gameweek {current_gw} starting XI: {', '.join(starting_xi)}. Give me 2 quick differential targets (<10% owned) and a 1-sentence team assessment."
                 
-                response = client.models.generate_content(
-                    model='gemini-3.6-flash',
-                    contents=prompt,
-                )
+                # List of models to try in order of preference
+                models_to_try = [
+                    'gemini-2.5-flash',
+                    'gemini-1.5-flash',
+                    'gemini-1.5-pro'
+                ]
                 
-                st.markdown("---")
-                st.markdown(response.text)
+                response_text = None
+                last_error = None
+
+                for model_name in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=prompt,
+                        )
+                        response_text = response.text
+                        break  # Stop loop if request succeeds
+                    except Exception as err:
+                        last_error = err
+                        continue  # Try next model if 503 or 404 occurs
+
+                if response_text:
+                    st.markdown("---")
+                    st.markdown(response_text)
+                else:
+                    st.error(f"Gemini API Error: {last_error}")
 
             except Exception as ai_err:
-                st.error(f"Gemini API Error: {ai_err}")
+                st.error(f"Execution Error: {ai_err}")
+
