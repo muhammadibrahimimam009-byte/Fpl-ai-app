@@ -34,7 +34,7 @@ if st.button("Generate AI Breakdown", type="primary"):
                 st.error(f"FPL API Error: {fpl_err}")
                 st.stop()
 
-            # 2. Run Gemini AI Analysis (REST Fallback Engine)
+            # 2. Run Gemini AI Analysis (Auto-Detect Active Model)
             api_key = os.environ.get("GEMINI_API_KEY")
             if not api_key:
                 st.error("Missing GEMINI_API_KEY in Streamlit Secrets!")
@@ -42,43 +42,47 @@ if st.button("Generate AI Breakdown", type="primary"):
 
             prompt = f"Act as an elite FPL analyst. Here is my Gameweek {current_gw} starting XI: {', '.join(starting_xi)}. Give me 2 quick differential targets (<10% owned) and a 1-sentence team assessment."
 
-            # List of model endpoints to cycle through automatically
-            candidate_models = [
-                "gemini-1.5-flash-latest",
-                "gemini-2.0-flash",
-                "gemini-1.5-pro-latest",
-                "gemini-1.5-flash"
-            ]
+            try:
+                # First, fetch the exact list of models allowed on this key
+                models_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+                models_res = requests.get(models_url).json()
 
-            ai_response = None
-            errors_log = []
+                if "models" not in models_res:
+                    st.error(f"API Key Error: {models_res.get('error', {}).get('message', 'Invalid API key')}")
+                    st.stop()
 
-            for model_name in candidate_models:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-                headers = {"Content-Type": "application/json"}
-                payload = {
-                    "contents": [{
-                        "parts": [{"text": prompt}]
-                    }]
-                }
+                # Filter for active generation models (preferring Flash)
+                active_models = [
+                    m['name'].replace('models/', '') 
+                    for m in models_res['models'] 
+                    if 'generateContent' in m.get('supportedGenerationMethods', [])
+                ]
 
-                try:
-                    res = requests.post(url, json=payload, headers=headers, timeout=10)
-                    if res.status_code == 200:
-                        data = res.json()
-                        ai_response = data['candidates'][0]['content']['parts'][0]['text']
-                        break  # Successfully generated analysis!
-                    else:
-                        errors_log.append(f"{model_name}: HTTP {res.status_code}")
-                except Exception as req_err:
-                    errors_log.append(f"{model_name}: {req_err}")
+                # Select best model (defaults to gemini-3.5-flash or first available)
+                selected_model = None
+                for target in ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-1.5-flash']:
+                    if target in active_models:
+                        selected_model = target
+                        break
+                
+                if not selected_model and active_models:
+                    selected_model = active_models[0]
 
-            if ai_response:
-                st.markdown("---")
-                st.markdown(ai_response)
-            else:
-                st.error(f"AI Service busy. Retried models: {', '.join(errors_log)}. Please click button again in a few seconds.")
+                # Send generation request
+                gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/{selected_model}:generateContent?key={api_key}"
+                payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                
+                res = requests.post(gen_url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+                
+                if res.status_code == 200:
+                    ai_text = res.json()['candidates'][0]['content']['parts'][0]['text']
+                    st.markdown("---")
+                    st.markdown(ai_text)
+                else:
+                    st.error(f"Generation Error ({selected_model}): {res.json().get('error', {}).get('message', res.text)}")
 
+            except Exception as e:
+                st.error(f"Execution Error: {e}")
 
 
 
