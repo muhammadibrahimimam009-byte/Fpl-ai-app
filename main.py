@@ -31,7 +31,7 @@ if st.button("Generate AI Breakdown", type="primary"):
                 st.error(f"FPL API Error: {fpl_err}")
                 st.stop()
 
-                                    # 2. Run Gemini AI Analysis with Fallback
+                                                # 2. Run Gemini AI Analysis with Fallback
             try:
                 api_key = os.environ.get("GEMINI_API_KEY")
                 if not api_key:
@@ -70,5 +70,6 @@ if st.button("Generate AI Breakdown", type="primary"):
 
             except Exception as ai_err:
                 st.error(f"Execution Error: {ai_err}")
+
 
 
