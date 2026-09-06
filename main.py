@@ -31,7 +31,7 @@ if st.button("Generate AI Breakdown", type="primary"):
                 st.error(f"FPL API Error: {fpl_err}")
                 st.stop()
 
-                        # 2. Run Gemini AI Analysis with Fallback
+                                    # 2. Run Gemini AI Analysis with Fallback
             try:
                 api_key = os.environ.get("GEMINI_API_KEY")
                 if not api_key:
@@ -41,11 +41,10 @@ if st.button("Generate AI Breakdown", type="primary"):
                 client = genai.Client(api_key=api_key)
                 prompt = f"Act as an elite FPL analyst. Here is my Gameweek {current_gw} starting XI: {', '.join(starting_xi)}. Give me 2 quick differential targets (<10% owned) and a 1-sentence team assessment."
                 
-                # List of models to try in order of preference
+                # Supported model identifiers in google-genai SDK
                 models_to_try = [
                     'gemini-2.5-flash',
-                    'gemini-1.5-flash',
-                    'gemini-1.5-pro'
+                    'gemini-1.5-flash'
                 ]
                 
                 response_text = None
@@ -71,4 +70,5 @@ if st.button("Generate AI Breakdown", type="primary"):
 
             except Exception as ai_err:
                 st.error(f"Execution Error: {ai_err}")
+
 
